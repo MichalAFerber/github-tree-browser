@@ -384,6 +384,9 @@
             white-space: nowrap;
         }
 
+        /* Muted directory prefix shown before the matched name in filter results */
+        .node a .path-dir { color: var(--muted) }
+
         .icon { width: 16px; height: 16px; display: inline-block; flex: none }
 
         .icon.dir { color: var(--accent) }
@@ -522,6 +525,76 @@
             white-space: pre;
             font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             color: var(--ink);
+        }
+
+        /* CODE VIEW (syntax-highlighted file preview) */
+        .codeview { display: flex; flex-direction: column; min-height: 100%; }
+
+        .codebar {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-bottom: 1px solid var(--line);
+            background: var(--card-2);
+        }
+
+        .codebar .lang {
+            font-size: 11px;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .codebar .codebtn {
+            margin-left: auto;
+            padding: 3px 9px;
+            font-size: 11px;
+            border-radius: 999px;
+        }
+
+        .codebody { display: flex; align-items: stretch; }
+
+        .codebody .gutter {
+            margin: 0;
+            padding: 16px 10px 16px 14px;
+            text-align: right;
+            color: var(--muted);
+            background: color-mix(in oklab, var(--card-2) 55%, transparent);
+            border-right: 1px solid var(--line);
+            user-select: none;
+            flex: none;
+            white-space: pre;
+            font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+
+        .codebody .code {
+            margin: 0;
+            padding: 16px 18px;
+            overflow-x: auto;
+            flex: 1 1 auto;
+            min-width: 0;
+            white-space: pre;
+            font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            color: var(--ink);
+        }
+
+        /* Keep token colors from the highlight.js theme but drop its block bg/padding
+           so the gutter and code share one surface. */
+        .codebody .code code {
+            font: inherit;
+            background: transparent;
+            padding: 0;
+        }
+
+        .codeview[data-wrap="on"] .gutter { display: none; }
+
+        .codeview[data-wrap="on"] .code {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
         }
 
         .footer {
@@ -763,12 +836,13 @@
                 <span id="treeCount" class="muted"></span>
                 <label class="filter right">
                     <svg class="icon" aria-hidden="true"><use href="#search" /></svg>
-                    <input id="filter" type="search" placeholder="Filter this folder…" autocomplete="off" />
+                    <input id="filter" type="search" placeholder="Filter all files & folders…" autocomplete="off" />
                 </label>
             </div>
             <nav class="crumbs" id="crumbs"></nav>
             <div class="tree" id="tree"></div>
-            <div class="footer">Tip: click a folder to expand · click a file to preview · use Copy URL or Copy CDN for embeddable links.</div>
+            <div class="tree" id="searchResults" style="display:none"></div>
+            <div class="footer">Tip: click a folder to expand · click a file to preview · the filter searches every folder &amp; file in the repo.</div>
         </section>
 
         <section class="panel viewer-panel">
@@ -794,7 +868,7 @@
                     <div class="ico"><svg class="icon" style="width:28px;height:28px"><use href="#file" /></svg></div>
                     <div>
                         <strong>Select a file to preview</strong><br>
-                        <span class="muted">Images render inline · text up to ~1 MB is shown · everything else gets raw + download.</span>
+                        <span class="muted">Images render inline · text &amp; code up to ~1 MB render with syntax colors · everything else gets raw + download.</span>
                     </div>
                 </div>
             </div>
@@ -821,6 +895,7 @@
             themeBtn: document.getElementById('themeBtn'),
             themeMode: document.getElementById('themeMode'),
             tree: document.getElementById('tree'),
+            searchResults: document.getElementById('searchResults'),
             crumbs: document.getElementById('crumbs'),
             treeCount: document.getElementById('treeCount'),
             viewer: document.getElementById('viewer'),
@@ -848,9 +923,81 @@
         els.toast.id = 'toast';
         document.body.appendChild(els.toast);
 
-        const IMAGE_EXT = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"];
-        const TEXT_EXT = [".md", ".txt", ".json", ".yml", ".yaml", ".csv", ".js", ".ts", ".css", ".html", ".xml", ".sh", ".py"];
-        const CODE_EXT = [".js", ".ts", ".css", ".html", ".xml", ".sh", ".py", ".json", ".yml", ".yaml"];
+        const MAX_TEXT_BYTES = 1024 * 1024; // render text/code files up to ~1 MB inline
+
+        const IMAGE_EXT = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg", ".bmp", ".ico"];
+
+        // Source-code-ish extensions (blue icon). Rendered inline as text.
+        const CODE_EXT = [
+            ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rb", ".php", ".phtml",
+            ".java", ".kt", ".kts", ".go", ".rs", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
+            ".hh", ".cs", ".swift", ".m", ".mm", ".scala", ".clj", ".cljs", ".ex", ".exs",
+            ".erl", ".hs", ".lua", ".pl", ".pm", ".r", ".dart", ".groovy", ".gradle", ".vb",
+            ".fs", ".ml", ".nim", ".zig", ".sql", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+            ".psm1", ".bat", ".cmd", ".awk", ".vue", ".svelte", ".astro", ".css", ".scss",
+            ".sass", ".less", ".styl", ".html", ".htm", ".xhtml", ".sol", ".proto"
+        ];
+
+        // Docs / data / config extensions (green icon). Rendered inline as text.
+        const TEXT_EXT = [
+            ".md", ".markdown", ".mdx", ".txt", ".text", ".rst", ".adoc", ".asciidoc",
+            ".json", ".jsonc", ".json5", ".geojson", ".ndjson", ".yml", ".yaml", ".toml",
+            ".ini", ".cfg", ".conf", ".config", ".properties", ".env", ".csv", ".tsv",
+            ".xml", ".xsl", ".xslt", ".plist", ".rss", ".atom", ".opml", ".svg",
+            ".hbs", ".handlebars", ".mustache", ".ejs", ".pug", ".jinja", ".jinja2", ".j2",
+            ".liquid", ".twig", ".tf", ".tfvars", ".hcl", ".graphql", ".gql", ".prisma",
+            ".diff", ".patch", ".log", ".map", ".lock", ".org", ".tex", ".bib", ".srt",
+            ".vtt", ".po", ".pot", ".gitignore", ".gitattributes", ".gitmodules",
+            ".editorconfig", ".npmignore", ".dockerignore", ".htaccess", ".babelrc",
+            ".prettierrc", ".eslintrc", ".stylelintrc", ".browserslistrc", ".nvmrc"
+        ];
+
+        // Files with no (or unusual) extension that are still plain text.
+        const TEXT_FILENAMES = new Set([
+            "dockerfile", "containerfile", "makefile", "gnumakefile", "rakefile", "gemfile",
+            "podfile", "brewfile", "procfile", "vagrantfile", "jenkinsfile", "caddyfile",
+            "cmakelists.txt", "license", "license.md", "licence", "copying", "notice",
+            "authors", "contributors", "changelog", "changes", "readme", "todo", "install",
+            "news", "manifest", ".env", ".npmrc", ".yarnrc", ".gitkeep", ".bashrc",
+            ".bash_profile", ".zshrc", ".profile", ".vimrc"
+        ]);
+
+        // Obvious binaries — never fetched/sniffed for inline text rendering.
+        const BINARY_EXT = [
+            ".zip", ".gz", ".tgz", ".bz2", ".xz", ".tar", ".rar", ".7z", ".pdf", ".doc",
+            ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".woff",
+            ".woff2", ".ttf", ".otf", ".eot", ".mp3", ".m4a", ".wav", ".flac", ".ogg",
+            ".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".flv", ".exe",
+            ".dll", ".so", ".dylib", ".bin", ".dat", ".class", ".jar", ".wasm", ".o",
+            ".a", ".lib", ".pyc", ".pyo", ".tif", ".tiff", ".psd", ".sketch", ".heic",
+            ".sqlite", ".sqlite3", ".db", ".mdb", ".iso", ".dmg", ".pkg", ".deb", ".rpm"
+        ];
+
+        function hasExt(name, list) {
+            const n = (name || '').toLowerCase();
+            return list.some(ext => n.endsWith(ext));
+        }
+
+        // True when a file name is a known text/code type (extension or well-known name).
+        function isKnownText(name) {
+            const n = (name || '').toLowerCase();
+            if (TEXT_FILENAMES.has(n)) return true;
+            return hasExt(n, TEXT_EXT) || hasExt(n, CODE_EXT);
+        }
+
+        // Heuristic: decode-as-UTF-8 produces NUL or many control/replacement chars => binary.
+        function looksBinary(text) {
+            const sample = text.slice(0, 4096);
+            if (!sample) return false;
+            if (sample.indexOf('\u0000') !== -1) return true;
+            let bad = 0;
+            for (let i = 0; i < sample.length; i++) {
+                const c = sample.charCodeAt(i);
+                if (c === 0xFFFD) { bad++; continue; }          // UTF-8 replacement char
+                if (c < 9 || (c > 13 && c < 32)) bad++;          // control chars (allow \t \n \v \f \r)
+            }
+            return (bad / sample.length) > 0.1;
+        }
 
         function encPath(path) {
             return path.split('/').map(encodeURIComponent).join('/');
@@ -913,10 +1060,7 @@
                 : 'Public repos only · ~60 requests/hour without a token';
         }
 
-        async function fetchDir(path = "") {
-            let res;
-            try { res = await fetch(apiURL(els.owner.value, els.repo.value, path, els.branch.value), { headers: authHeaders() }); }
-            catch (netErr) { showBanner('Network error while contacting GitHub API.'); throw netErr; }
+        function reportApiError(res) {
             if (res.status === 401) {
                 showBanner('GitHub API rejected the token (401). Clear it or use a valid PAT.');
             }
@@ -929,8 +1073,35 @@
                     showBanner(`GitHub API rate limit reached. Try again in about ${mins} minute(s).`);
                 } else { showBanner('Access denied or temporarily rate limited by GitHub API.'); }
             }
+        }
+
+        async function fetchDir(path = "") {
+            let res;
+            try { res = await fetch(apiURL(els.owner.value, els.repo.value, path, els.branch.value), { headers: authHeaders() }); }
+            catch (netErr) { showBanner('Network error while contacting GitHub API.'); throw netErr; }
+            reportApiError(res);
             if (!res.ok) { throw new Error(await res.text()); }
             return res.json();
+        }
+
+        // Recursive tree of the whole repo (one request), cached per owner/repo/branch.
+        // Powers the repo-wide filter so it spans every folder level, not just the open one.
+        const fullTreeCache = new Map();
+        function treesURL(owner, repo, branch) {
+            return `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
+        }
+        async function getFullTree() {
+            const key = repoKey();
+            if (fullTreeCache.has(key)) return fullTreeCache.get(key);
+            let res;
+            try { res = await fetch(treesURL(els.owner.value, els.repo.value, els.branch.value), { headers: authHeaders() }); }
+            catch (netErr) { showBanner('Network error while contacting GitHub API.'); throw netErr; }
+            reportApiError(res);
+            if (!res.ok) { throw new Error(await res.text()); }
+            const data = await res.json();
+            const out = { tree: Array.isArray(data.tree) ? data.tree : [], truncated: !!data.truncated };
+            fullTreeCache.set(key, out);
+            return out;
         }
 
         function iconSymbolFor(item) {
@@ -968,6 +1139,7 @@
         }
 
         const dirImageCache = new Map();
+        let currentFolderCountText = ''; // remembered so the filter can restore it on clear
         function repoKey() { return `${els.owner.value}/${els.repo.value}@${els.branch.value}`; }
         function openDirsKey() { return `repoTree:${repoKey()}:openDirs`; }
         function loadOpenDirs() { try { return new Set(JSON.parse(localStorage.getItem(openDirsKey()) || '[]')); } catch { return new Set(); } }
@@ -982,7 +1154,9 @@
                     return;
                 }
                 items.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
-                els.treeCount.textContent = `${items.length} item${items.length === 1 ? '' : 's'}`;
+                const countText = `${items.length} item${items.length === 1 ? '' : 's'}`;
+                els.treeCount.textContent = countText;
+                if (container === els.tree) currentFolderCountText = countText;
                 container.innerHTML = '';
 
                 const openSet = loadOpenDirs();
@@ -1080,23 +1254,171 @@
             const active = document.querySelector(`.node[data-path="${CSS.escape(item.path)}"]`);
             if (active) active.classList.add('is-active');
 
-            const lower = item.name.toLowerCase();
-            if (IMAGE_EXT.some(ext => lower.endsWith(ext))) {
+            if (hasExt(item.name, IMAGE_EXT)) {
                 els.viewer.innerHTML = `<div class="preview"><img id="previewImg" alt="${item.name}" src="${raw}"></div>`;
                 const prevImg = document.getElementById('previewImg');
                 prevImg.addEventListener('click', () => openLightbox(item.path));
-            } else if (TEXT_EXT.some(ext => lower.endsWith(ext)) && item.size < 1024 * 1024) {
-                els.viewer.innerHTML = '<div class="empty"><span class="muted">Loading text…</span></div>';
-                try {
-                    const res = await fetch(raw); const text = await res.text();
-                    const pre = document.createElement('pre'); pre.textContent = text;
-                    els.viewer.innerHTML = ''; els.viewer.appendChild(pre);
-                }
-                catch (e) { els.viewer.innerHTML = `<div class="empty"><span>Could not load text. <a href="${raw}" target="_blank" rel="noopener">Open raw</a></span></div>` }
+            } else if (typeof item.size === 'number' && item.size < MAX_TEXT_BYTES && !hasExt(item.name, BINARY_EXT)) {
+                await renderTextFile(item, raw, gh);
             } else {
-                els.viewer.innerHTML = `<div class="empty"><div class="ico"><svg class="icon" style="width:28px;height:28px"><use href="#file" /></svg></div><span>Preview not available. <a href="${gh}" target="_blank" rel="noopener">View on GitHub</a> · <a href="${raw}" target="_blank" rel="noopener">Open raw</a></span></div>`
+                renderUnsupported(item, raw, gh);
             }
             setQuery(item.path);
+        }
+
+        function renderUnsupported(item, raw, gh) {
+            els.viewer.innerHTML = `<div class="empty"><div class="ico"><svg class="icon" style="width:28px;height:28px"><use href="#file" /></svg></div><span>Preview not available. <a href="${gh}" target="_blank" rel="noopener">View on GitHub</a> · <a href="${raw}" target="_blank" rel="noopener">Open raw</a></span></div>`;
+        }
+
+        // Fetch a file and render it as a syntax-highlighted, line-numbered code view.
+        // Known text/code types always render; unknown types render only if they sniff as text.
+        async function renderTextFile(item, raw, gh) {
+            els.viewer.innerHTML = '<div class="empty"><span class="muted">Loading…</span></div>';
+            let text;
+            try {
+                const res = await fetch(raw);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                text = await res.text();
+            } catch (e) {
+                els.viewer.innerHTML = `<div class="empty"><span>Could not load file. <a href="${raw}" target="_blank" rel="noopener">Open raw</a></span></div>`;
+                return;
+            }
+            if (!isKnownText(item.name) && looksBinary(text)) { renderUnsupported(item, raw, gh); return; }
+
+            const wrapOn = getWrapPref();
+            const view = document.createElement('div');
+            view.className = 'codeview';
+            view.setAttribute('data-wrap', wrapOn ? 'on' : 'off');
+
+            const bar = document.createElement('div');
+            bar.className = 'codebar';
+            const lang = document.createElement('span');
+            lang.className = 'lang';
+            lang.textContent = langLabel(item.name);
+            const wrapBtn = document.createElement('button');
+            wrapBtn.type = 'button';
+            wrapBtn.className = 'codebtn';
+            wrapBtn.textContent = 'Wrap: ' + (wrapOn ? 'On' : 'Off');
+            wrapBtn.onclick = () => {
+                const on = view.getAttribute('data-wrap') !== 'on';
+                view.setAttribute('data-wrap', on ? 'on' : 'off');
+                wrapBtn.textContent = 'Wrap: ' + (on ? 'On' : 'Off');
+                setWrapPref(on);
+            };
+            bar.append(lang, wrapBtn);
+
+            const body = document.createElement('div');
+            body.className = 'codebody';
+            const gutter = document.createElement('pre');
+            gutter.className = 'gutter';
+            gutter.setAttribute('aria-hidden', 'true');
+            const lineCount = text.split('\n').length;
+            gutter.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+            const pre = document.createElement('pre');
+            pre.className = 'code';
+            const code = document.createElement('code');
+            code.textContent = text; // show plain text immediately; colors arrive when hljs loads
+            pre.appendChild(code);
+            body.append(gutter, pre);
+
+            view.append(bar, body);
+            els.viewer.innerHTML = '';
+            els.viewer.appendChild(view);
+
+            highlightCode(code, text, item.name);
+        }
+
+        /* ---- Syntax highlighting (highlight.js, lazy-loaded from CDN) ---- */
+        const HLJS_VERSION = '11.9.0';
+        const HLJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/${HLJS_VERSION}`;
+        // Map file extension / well-known name -> highlight.js language id.
+        const HLJS_LANG = {
+            js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+            ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', php: 'php',
+            phtml: 'php', java: 'java', kt: 'kotlin', kts: 'kotlin', go: 'go', rs: 'rust',
+            c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp',
+            cs: 'csharp', swift: 'swift', m: 'objectivec', mm: 'objectivec', scala: 'scala',
+            clj: 'clojure', cljs: 'clojure', ex: 'elixir', exs: 'elixir', erl: 'erlang',
+            hs: 'haskell', lua: 'lua', pl: 'perl', pm: 'perl', r: 'r', dart: 'dart',
+            groovy: 'groovy', gradle: 'groovy', vb: 'vbnet', fs: 'fsharp', ml: 'ocaml',
+            sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', ps1: 'powershell',
+            psm1: 'powershell', bat: 'dos', cmd: 'dos', sql: 'sql', css: 'css',
+            scss: 'scss', sass: 'scss', less: 'less', styl: 'less', html: 'xml',
+            htm: 'xml', xhtml: 'xml', xml: 'xml', svg: 'xml', xsl: 'xml', xslt: 'xml',
+            rss: 'xml', atom: 'xml', plist: 'xml', vue: 'xml', json: 'json', jsonc: 'json',
+            json5: 'json', geojson: 'json', ndjson: 'json', yml: 'yaml', yaml: 'yaml',
+            toml: 'ini', ini: 'ini', cfg: 'ini', conf: 'ini', properties: 'properties',
+            md: 'markdown', markdown: 'markdown', mdx: 'markdown', diff: 'diff',
+            patch: 'diff', graphql: 'graphql', gql: 'graphql', tex: 'latex',
+            dockerfile: 'dockerfile', makefile: 'makefile', gnumakefile: 'makefile',
+            cmake: 'cmake', nginx: 'nginx', proto: 'protobuf', sol: 'solidity'
+        };
+        // Types we deliberately leave un-highlighted (avoids odd auto-detect coloring of prose).
+        const PLAIN_EXT = ['.txt', '.text', '.log', '.csv', '.tsv'];
+
+        function langFor(name) {
+            const n = (name || '').toLowerCase();
+            if (HLJS_LANG[n]) return HLJS_LANG[n];               // whole-name match (e.g. "dockerfile")
+            const dot = n.lastIndexOf('.');
+            const ext = dot >= 0 ? n.slice(dot + 1) : '';
+            return HLJS_LANG[ext] || '';
+        }
+        function langLabel(name) {
+            const l = langFor(name);
+            if (l) return l;
+            const dot = (name || '').lastIndexOf('.');
+            return dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'text';
+        }
+
+        const WRAP_KEY = 'repoTree:wrap';
+        function getWrapPref() { try { return localStorage.getItem(WRAP_KEY) === '1'; } catch { return false; } }
+        function setWrapPref(on) { try { on ? localStorage.setItem(WRAP_KEY, '1') : localStorage.removeItem(WRAP_KEY); } catch { } }
+
+        let hljsPromise = null;
+        function loadHljs() {
+            if (window.hljs) return Promise.resolve(window.hljs);
+            if (hljsPromise) return hljsPromise;
+            hljsPromise = new Promise((resolve, reject) => {
+                const dark = document.createElement('link');
+                dark.rel = 'stylesheet'; dark.id = 'hljs-dark';
+                dark.href = `${HLJS_CDN}/styles/github-dark.min.css`;
+                const light = document.createElement('link');
+                light.rel = 'stylesheet'; light.id = 'hljs-light';
+                light.href = `${HLJS_CDN}/styles/github.min.css`;
+                document.head.append(dark, light);
+                syncHljsTheme();
+                const s = document.createElement('script');
+                s.src = `${HLJS_CDN}/highlight.min.js`;
+                s.onload = () => resolve(window.hljs);
+                s.onerror = () => { hljsPromise = null; reject(new Error('Could not load highlight.js')); };
+                document.head.appendChild(s);
+            });
+            return hljsPromise;
+        }
+        // Enable the theme stylesheet that matches the app's current light/dark mode.
+        function syncHljsTheme() {
+            const dark = document.getElementById('hljs-dark');
+            const light = document.getElementById('hljs-light');
+            if (!dark || !light) return;
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            dark.disabled = !isDark;
+            light.disabled = isDark;
+        }
+        async function highlightCode(codeEl, text, name) {
+            const n = (name || '').toLowerCase();
+            if (PLAIN_EXT.some(e => n.endsWith(e))) return;       // keep plain text plain
+            try {
+                const hljs = await loadHljs();
+                if (!hljs) return;
+                const lang = langFor(name);
+                const result = (lang && hljs.getLanguage(lang))
+                    ? hljs.highlight(text, { language: lang, ignoreIllegals: true })
+                    : hljs.highlightAuto(text);
+                if (result && typeof result.value === 'string') {
+                    codeEl.innerHTML = result.value;
+                    codeEl.classList.add('hljs');
+                }
+            } catch (e) { /* offline / blocked — plain text already shown */ }
         }
 
         async function loadPath(path) {
@@ -1117,21 +1439,94 @@
             }
         }
 
-        function applyFilter(query) {
+        // Repo-wide filter: with a query, search every file & folder across all levels
+        // (via the cached recursive tree) and show a flat result list. Empty query
+        // restores the normal lazy-loaded folder tree.
+        const SEARCH_LIMIT = 500;
+        let searchSeq = 0;
+        async function applyFilter(query) {
             const q = (query || '').trim().toLowerCase();
-            for (const el of Array.from(els.tree.children)) {
-                if (!q) { el.style.display = ''; continue; }
-                let label = '';
-                if (el.tagName === 'DETAILS') {
-                    const s = el.querySelector(':scope > summary');
-                    label = s ? s.textContent : '';
-                } else if (el.classList && el.classList.contains('node')) {
-                    label = el.textContent;
+            const seq = ++searchSeq; // bump on every call so stale async renders are dropped
+            if (!q) {
+                els.searchResults.style.display = 'none';
+                els.searchResults.innerHTML = '';
+                els.tree.style.display = '';
+                els.treeCount.textContent = currentFolderCountText;
+                return;
+            }
+            els.tree.style.display = 'none';
+            els.searchResults.style.display = '';
+            if (!fullTreeCache.has(repoKey())) {
+                els.searchResults.innerHTML = '<div class="muted" style="padding:10px 12px">Searching repository…</div>';
+            }
+            let data;
+            try { data = await getFullTree(); }
+            catch (err) {
+                if (seq !== searchSeq) return;
+                els.searchResults.innerHTML = '<div class="muted" style="padding:10px 12px">Could not search this repository. Try again or add a token to raise the rate limit.</div>';
+                els.treeCount.textContent = '';
+                return;
+            }
+            if (seq !== searchSeq) return; // a newer query superseded this one
+            renderSearchResults(data, q);
+        }
+
+        function renderSearchResults(data, q) {
+            const matches = data.tree
+                .filter(e => (e.type === 'blob' || e.type === 'tree') && e.path.toLowerCase().includes(q))
+                .sort((a, b) => (a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'tree' ? -1 : 1));
+
+            els.searchResults.innerHTML = '';
+            if (!matches.length) {
+                els.searchResults.innerHTML = '<div class="muted" style="padding:10px 12px">No matching files or folders.</div>';
+                els.treeCount.textContent = '0 matches';
+                return;
+            }
+            els.treeCount.textContent = `${matches.length} match${matches.length === 1 ? '' : 'es'}`;
+
+            const shown = matches.slice(0, SEARCH_LIMIT);
+            const frag = document.createDocumentFragment();
+            for (const e of shown) {
+                const isDir = e.type === 'tree';
+                const name = e.path.split('/').pop();
+                const dir = e.path.slice(0, e.path.length - name.length);
+                const ico = isDir ? { id: '#dir', cls: 'icon dir' } : iconSymbolFor({ type: 'file', name });
+
+                const row = document.createElement('div');
+                row.className = 'node';
+                row.dataset.path = e.path;
+                row.innerHTML = `<svg class="${ico.cls}"><use href="${ico.id}"/></svg>`;
+
+                const link = document.createElement('a');
+                link.href = '#';
+                link.title = e.path;
+                if (dir) { const d = document.createElement('span'); d.className = 'path-dir'; d.textContent = dir; link.appendChild(d); }
+                link.appendChild(document.createTextNode(name));
+                if (isDir) {
+                    link.onclick = (ev) => { ev.preventDefault(); els.filter.value = ''; loadPath(e.path); };
                 } else {
-                    el.style.display = 'none';
-                    continue;
+                    link.onclick = (ev) => { ev.preventDefault(); openFile({ name, path: e.path, size: e.size, type: 'file' }); };
                 }
-                el.style.display = label.toLowerCase().includes(q) ? '' : 'none';
+                row.appendChild(link);
+                if (!isDir && typeof e.size === 'number') {
+                    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = formatSize(e.size);
+                    row.appendChild(badge);
+                }
+                frag.appendChild(row);
+            }
+            els.searchResults.appendChild(frag);
+
+            if (matches.length > shown.length) {
+                const note = document.createElement('div');
+                note.className = 'muted'; note.style.padding = '8px 12px';
+                note.textContent = `Showing first ${shown.length} of ${matches.length} matches — refine your filter to narrow it down.`;
+                els.searchResults.appendChild(note);
+            }
+            if (data.truncated) {
+                const note = document.createElement('div');
+                note.className = 'muted'; note.style.padding = '8px 12px';
+                note.textContent = 'This repository is very large; some files may be missing from search results.';
+                els.searchResults.appendChild(note);
             }
         }
 
@@ -1173,6 +1568,7 @@
             const m = mode === 'system' ? (prefersDark && prefersDark.matches ? 'dark' : 'light') : mode;
             document.documentElement.setAttribute('data-theme', m);
             els.themeMode.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+            syncHljsTheme();
         }
         function getTheme() { return localStorage.getItem(THEME_KEY) || 'system'; }
         function setTheme(mode) { localStorage.setItem(THEME_KEY, mode); applyTheme(mode); }
@@ -1193,6 +1589,16 @@
             results.push(['ghURL encodes path segments', /Plex%20Movies%26TV\.png$/.test(gu), gu]);
             const cu = cdnURL('o', 'r', 'folder/Plex Movies&TV.png', 'main');
             results.push(['cdnURL points to jsDelivr', /^https:\/\/cdn\.jsdelivr\.net\/gh\/o\/r@main\//.test(cu) && /Plex%20Movies%26TV\.png$/.test(cu), cu]);
+            results.push(['isKnownText recognizes php', isKnownText('index.php') === true, 'index.php']);
+            results.push(['isKnownText recognizes xml', isKnownText('data.xml') === true, 'data.xml']);
+            results.push(['isKnownText recognizes Dockerfile', isKnownText('Dockerfile') === true, 'Dockerfile']);
+            results.push(['isKnownText rejects png', isKnownText('photo.png') === false, 'photo.png']);
+            results.push(['looksBinary flags NUL bytes', looksBinary('abc\u0000def') === true, '']);
+            results.push(['looksBinary passes plain text', looksBinary('hello, world\n{ "a": 1 }\n') === false, '']);
+            results.push(['hasExt matches BINARY_EXT', hasExt('archive.ZIP', BINARY_EXT) === true, 'archive.ZIP']);
+            results.push(['langFor maps php -> php', langFor('index.php') === 'php', langFor('index.php')]);
+            results.push(['langFor maps xml -> xml', langFor('feed.xml') === 'xml', langFor('feed.xml')]);
+            results.push(['langFor maps Dockerfile', langFor('Dockerfile') === 'dockerfile', langFor('Dockerfile')]);
             console.group('Self-tests');
             for (const [name, ok, detail] of results) { if (ok) console.log('✔', name, detail); else console.error('✘', name, 'detail:', detail); }
             console.groupEnd();
@@ -1244,9 +1650,14 @@
             showToast(getPat() ? 'Token saved (browser only)' : 'Token cleared');
         });
 
-        els.filter.addEventListener('input', (e) => applyFilter(e.target.value));
+        let filterTimer = 0;
+        els.filter.addEventListener('input', (e) => {
+            const v = e.target.value;
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(() => applyFilter(v), 150);
+        });
         els.filter.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { els.filter.value = ''; applyFilter(''); }
+            if (e.key === 'Escape') { els.filter.value = ''; clearTimeout(filterTimer); applyFilter(''); }
         });
 
         els.copyRaw.addEventListener('click', async (e) => {

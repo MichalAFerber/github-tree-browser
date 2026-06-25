@@ -1,6 +1,6 @@
 # GitHub Tree Browser
 
-A single-file, client-only explorer for browsing any **public GitHub repository** as a collapsible tree on **GitHub Pages**. Previews images inline, shows small text files, and gives one-click **raw**, **CDN**, and **GitHub** links.
+A single-file, client-only explorer for browsing any **public GitHub repository** as a collapsible tree on **GitHub Pages**. Previews images inline, renders text & code files with syntax highlighting, and gives one-click **raw**, **CDN**, and **GitHub** links.
 
 🔗 **Live:** [michalaferber.github.io/github-tree-browser](https://michalaferber.github.io/github-tree-browser/)
 
@@ -9,9 +9,11 @@ A single-file, client-only explorer for browsing any **public GitHub repository*
 ## Features
 
 - 🗂️ Collapsible directory tree (lazy-loads subfolders, remembers expanded state)
-- 🔎 Live filter for the current folder (Esc clears)
+- 🔎 Repo-wide filter that searches **every folder & file at all levels** (not just the open folder), shown as a flat result list with full paths (Esc clears)
 - 🖼️ Inline image preview (PNG, JPG, GIF, WEBP, AVIF, SVG) + lightbox with keyboard nav
-- 📄 Text preview for small files (≤ ~1 MB; md/txt/json/yml/csv/js/ts/css/html/xml/sh/py)
+- 📄 Syntax-highlighted preview for text & code files (≤ ~1 MB) — PHP, XML, JSON, YAML, JS/TS, Python, Go, Rust, C/C++, shell, CSS/HTML, Dockerfile, Makefile, and many more, with line numbers and a wrap toggle
+  - Unknown extensions are sniffed for binary content, so genuinely-text files still render while real binaries fall back to raw + download
+  - Colors come from [highlight.js](https://highlightjs.org/) loaded lazily from a CDN; if it's unavailable the file still renders as plain text
 - 🧭 Breadcrumb navigation
 - 🔗 Deep linking to a specific file or folder (`?path=...`)
   - **Safe fallback** when embedded/sandboxed: uses `#path=...` if the environment disallows `history.replaceState`
@@ -65,7 +67,8 @@ With a fine-grained PAT (no scopes needed for public repos, just `public_repo` i
 ## Tech
 
 - Vanilla HTML/CSS/JS, no build step, single file
-- GitHub Contents API + raw.githubusercontent.com
+- GitHub Contents API + Git Trees API (recursive, for repo-wide filtering) + raw.githubusercontent.com
+- highlight.js (lazy-loaded from cdnjs) for syntax colors, with graceful plain-text fallback
 - jsDelivr CDN for the "copy CDN URL" shortcut
 
 ## License
