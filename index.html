@@ -384,8 +384,10 @@
             white-space: nowrap;
         }
 
-        /* Muted directory prefix shown before the matched name in filter results */
-        .node a .path-dir { color: var(--muted) }
+        /* Filter results: filename stays prominent; folder path is muted + secondary.
+           The name comes first, so the row's end-ellipsis trims the path, not the name. */
+        .node a .r-name { color: var(--ink-soft) }
+        .node a .path-dir { color: var(--muted); font-size: 11px; margin-left: 8px }
 
         .icon { width: 16px; height: 16px; display: inline-block; flex: none }
 
@@ -1500,8 +1502,18 @@
                 const link = document.createElement('a');
                 link.href = '#';
                 link.title = e.path;
-                if (dir) { const d = document.createElement('span'); d.className = 'path-dir'; d.textContent = dir; link.appendChild(d); }
-                link.appendChild(document.createTextNode(name));
+                // Filename first (always visible); the folder path follows, muted and
+                // truncated from the end so the name never gets clipped away.
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'r-name';
+                nameSpan.textContent = name;
+                link.appendChild(nameSpan);
+                if (dir) {
+                    const d = document.createElement('span');
+                    d.className = 'path-dir';
+                    d.textContent = dir.replace(/\/+$/, '');
+                    link.appendChild(d);
+                }
                 if (isDir) {
                     link.onclick = (ev) => { ev.preventDefault(); els.filter.value = ''; loadPath(e.path); };
                 } else {
