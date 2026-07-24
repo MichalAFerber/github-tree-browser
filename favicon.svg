@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GitHub Tree Browser">
+  <rect width="64" height="64" rx="14" fill="#e0654f"/>
+  <g stroke="#ffffff" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <path d="M22 18 V48 M22 27 H36 M22 37 H36 M22 47 H36"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="22" cy="16" r="4.5"/>
+    <circle cx="40" cy="27" r="3.6"/>
+    <circle cx="40" cy="37" r="3.6"/>
+    <circle cx="40" cy="47" r="3.6"/>
+  </g>
+</svg>
