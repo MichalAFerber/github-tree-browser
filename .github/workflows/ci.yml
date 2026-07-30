@@ -1,0 +1,26 @@
+# §15 gates for a no-build single-file page. Deploy is GitHub Pages from main.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions: {}
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # §2 gate: the page (with inlined highlight.js) must be eval-free.
+      - run: ./scripts/no-eval.sh .
+      # §1 gate: no mailto: anywhere in the page.
+      - run: |
+          set -euo pipefail
+          if grep -n 'mailto:' index.html; then echo "::error::mailto: in page (§1)"; exit 1; fi
