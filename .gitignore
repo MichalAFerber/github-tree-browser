@@ -1,0 +1,10 @@
+# OS / editor cruft (§10)
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Secrets never land in a repo (§10, §16)
+.dev.vars*
+.env*

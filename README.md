@@ -1,6 +1,6 @@
 # GitHub Tree Browser
 
-A single-file, client-only explorer for browsing any **public GitHub repository** as a collapsible tree on **GitHub Pages**. Previews images inline, renders text & code files with syntax highlighting, and gives one-click **raw**, **CDN**, and **GitHub** links.
+A single-file, client-only explorer for browsing any **public GitHub repository** as a collapsible tree on **GitHub Pages**. **Class C micro-project** (§10): public, MIT, no custom domain. Previews images inline, renders text & code files with syntax highlighting, and gives one-click **raw**, **CDN**, and **GitHub** links.
 
 🔗 **Live:** [michalaferber.github.io/github-tree-browser](https://michalaferber.github.io/github-tree-browser/)
 
@@ -74,3 +74,13 @@ With a fine-grained PAT (no scopes needed for public repos, just `public_repo` i
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Credits
+
+| Component | Version | License |
+| --- | --- | --- |
+| [highlight.js](https://highlightjs.org) (inlined) | 11.9.0 | BSD-3-Clause |
+
+## Standards
+
+Built to the TGWAB Dev Standards **v2.10.1** (internal).
